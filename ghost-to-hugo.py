@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Convert a Ghost CMS JSON backup to Hugo Markdown posts/pages.
+Ghost2Hugo v1.2 — Convert a Ghost CMS JSON backup to Hugo Markdown posts/pages.
 
 Features:
 - Converts HTML → Markdown using html2text
@@ -9,6 +9,8 @@ Features:
 - Preserves SEO, author, and image metadata
 - Copies referenced images into each post's folder
 - Validates output and moves invalid results to /invalid/
+- Adds sensible Hugo defaults (description, cover, type, categories, reading_time)
+- Auto-selects OpenGraph image (og_image > feature_image > first content image)
 """
 
 import os
@@ -45,17 +47,23 @@ def normalize_umlauts(text: str) -> str:
     return text
 
 
+def remove_emojis(s: str) -> str:
+    """Strip all non-BMP chars (emojis etc.)."""
+    return re.sub(r"[\U00010000-\U0010FFFF]", "", s)
+
+
 def clean_slug(slug_or_title: str) -> str:
     """Remove emojis and special symbols, normalize umlauts, and create a safe slug."""
-    # Remove all emojis and other non-BMP Unicode characters
-    cleaned = re.sub(r"[\U00010000-\U0010FFFF]", "", slug_or_title)
-    # Replace German umlauts and ß with ASCII equivalents
+    cleaned = remove_emojis(slug_or_title)
     cleaned = normalize_umlauts(cleaned)
-    # Replace all non-alphanumeric characters with hyphens
     cleaned = re.sub(r"[^a-zA-Z0-9\-]+", "-", cleaned.lower())
-    # Collapse multiple consecutive hyphens and trim edges
     cleaned = re.sub(r"-+", "-", cleaned).strip("-")
     return cleaned
+
+
+def ensure_image_alts(markdown: str, default_alt: str) -> str:
+    """Fill empty Markdown image alts: ![](path) -> ![default_alt](path)."""
+    return re.sub(r'!\[\s*\]\(([^)]+)\)', fr'![{re.escape(default_alt)}](\1)', markdown)
 
 
 def copy_images(markdown: str, images_dir: str, post_dir: str) -> (str, bool):
@@ -132,61 +140,86 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
     meta_title = (post.get("meta_title") or "").strip()
     meta_description = (post.get("meta_description") or "").strip()
     og_image = post.get("og_image")
+    post_type = post.get("type") or "post"
 
     html_content = html_content.replace("__GHOST_URL__", site_url)
     markdown_content = converter.handle(html_content).strip()
 
+    # Add alt texts if missing
+    title_plain = remove_emojis(title).strip()
+    markdown_content = ensure_image_alts(markdown_content, title_plain or "image")
+
+    # Fallbacks: description & reading_time
+    if not excerpt:
+        first_para = next((p.strip() for p in markdown_content.split("\n\n") if p.strip()), "")
+        excerpt = (first_para[:157] + "…") if len(first_para) > 160 else first_para
+    if not reading_time:
+        words = len(re.findall(r"\w+", markdown_content))
+        reading_time = max(1, round(words / 200))
+
+    # Dates
     date_fmt = datetime.fromisoformat(date.replace("Z", "+00:00")).strftime("%Y-%m-%dT%H:%M:%S%z")
     lastmod_fmt = datetime.fromisoformat(updated.replace("Z", "+00:00")).strftime("%Y-%m-%dT%H:%M:%S%z") if updated else date_fmt
-    
-    is_draft = (
-        default_status == "draft"
-        if default_status
-        else post["status"] != "published"
-    )
 
+    # Draft override
+    is_draft = (default_status == "draft") if default_status else (post["status"] != "published")
+
+    # --- Front matter ---
     front_matter = {
         "title": title,
+        "title_plain": title_plain or title,
         "date": date_fmt,
         "lastmod": lastmod_fmt,
         "slug": slug,
         "draft": is_draft,
+        "type": post_type,
         "author": author_name,
+        "reading_time": reading_time,
+        "description": excerpt,
     }
 
     if author_bio:
         front_matter["author_bio"] = author_bio
     if author_image:
         front_matter["author_image"] = author_image.strip()
-    if excerpt:
-        front_matter["description"] = excerpt
     if feature_image:
-        front_matter["featured_image"] = f"./{os.path.basename(feature_image.strip())}"
-    if reading_time:
-        front_matter["reading_time"] = reading_time
+        feat_local = f"./{os.path.basename(feature_image.strip())}"
+        front_matter["featured_image"] = feat_local
+        front_matter["cover"] = feat_local
 
+    # --- SEO block with smart image fallback ---
     seo_block = {}
     if meta_title:
         seo_block["title"] = meta_title
     if meta_description:
         seo_block["description"] = meta_description
+
+    og_local = None
     if og_image:
-        seo_block["image"] = f"./{os.path.basename(og_image.strip())}"
+        og_local = f"./{os.path.basename(og_image.strip())}"
+    elif feature_image:
+        og_local = f"./{os.path.basename(feature_image.strip())}"
+    else:
+        match_first_image = re.search(r"!\[.*?\]\(([^)]+)\)", markdown_content)
+        if match_first_image:
+            og_local = match_first_image.group(1).strip()
+
+    if og_local:
+        seo_block["image"] = og_local
     if seo_block:
         front_matter["seo"] = seo_block
 
+    # Tags & categories
     if tags:
-        front_matter["tags"] = [
-            t["name"].strip() if isinstance(t, dict) else str(t).strip()
-            for t in tags
-        ]
+        tag_list = [t["name"].strip() if isinstance(t, dict) else str(t).strip() for t in tags if str(t).strip()]
+        if tag_list:
+            front_matter["tags"] = tag_list
+            front_matter["categories"] = [tag_list[0]]
 
     yaml_front = yaml.safe_dump(front_matter, sort_keys=False, allow_unicode=True).strip()
-    full_content = f"---\n{yaml_front}\n---\n\n{markdown_content}\n"
 
-    # === Copy images ===
     post_dir = os.path.join(out_dir, slug)
-    markdown_with_local_images, has_images = copy_images(markdown_content, images_dir, post_dir)
+    markdown_replaced, has_images = copy_images(markdown_content, images_dir, post_dir)
 
     if feature_image:
         feature_filename = os.path.basename(feature_image.strip())
@@ -203,10 +236,10 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
         shutil.rmtree(post_dir, ignore_errors=True)
         markdown_path = os.path.join(out_dir, f"{slug}.md")
 
+    full_content = f"---\n{yaml_front}\n---\n\n{markdown_replaced}\n"
     with open(markdown_path, "w", encoding="utf-8") as f:
         f.write(full_content.rstrip() + "\n")
 
-    # === Validate output ===
     if not validate_markdown(markdown_path):
         count_invalid[0] += 1
         invalid_target = os.path.join(invalid_dir, slug)
@@ -217,7 +250,8 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
         print(f"⚠️  Invalid file moved to: {invalid_target}")
     else:
         count_valid[0] += 1
-        print(f"✅ Exported: {markdown_path}")
+        imgs = "bundle" if has_images else "single"
+        print(f"✅ Exported: {markdown_path}  ({imgs}, {reading_time} min read)")
 
 
 # === Main CLI ===
@@ -233,7 +267,6 @@ def main():
     parser.add_argument("--output-invalid", default="content/invalid", help="Folder for invalid outputs")
     parser.add_argument("--site-url", default="https://example.com", help="Base URL for image and link rewriting")
     parser.add_argument("--default-status", choices=["published", "draft"], help="Override all post statuses (e.g., import everything as 'draft').")
-
 
     args = parser.parse_args()
 
@@ -266,14 +299,9 @@ def main():
         if post["status"] not in ["published", "draft"]:
             continue
         print(f"➡️  {post['title']} ({post['type']})")
-        if post["type"] == "page":
-            export_post(post, authors, args.images, args.output_pages, args.output_invalid, args.site_url,
-                        converter, count_valid, count_invalid, args.default_status)
-        elif post["type"] == "post":
-            export_post(post, authors, args.images, args.output_posts, args.output_invalid, args.site_url,
-                        converter, count_valid, count_invalid, args.default_status)
-        else:
-            print(f"⚠️  Unknown post type: {post['type']}")
+        target_dir = args.output_pages if post["type"] == "page" else args.output_posts
+        export_post(post, authors, args.images, target_dir, args.output_invalid,
+                    args.site_url, converter, count_valid, count_invalid, args.default_status)
 
     print("\n🎉 Conversion finished!")
     print(f"✅ Valid exports: {count_valid[0]}")

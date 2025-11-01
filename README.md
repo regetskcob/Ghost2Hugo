@@ -1,14 +1,21 @@
-# Ghost2Hugo
+# 🪄 Ghost2Hugo
 
-A lightweight Python 3 tool to convert [Ghost CMS](https://ghost.org) JSON backups
-into [Hugo](https://gohugo.io) compatible Markdown files.
+Convert your **Ghost CMS JSON backup** into a fully structured, **Hugo-compatible Markdown** blog — including metadata, images, and SEO fields.
 
-## 🚀 Features
-- Converts HTML → Markdown with `html2text`
-- Generates Hugo YAML front matter
-- Preserves SEO, tags, author info & images
-- Validates output and moves invalid files automatically
-- Works with Ghost v3–v6 backup formats
+---
+
+## ✨ Features
+
+- 🧩 Converts Ghost **HTML → Markdown** using `html2text`
+- 🪶 Generates valid **YAML front matter** for Hugo
+- 📸 Copies referenced images into the correct post folders
+- 🔍 Adds **SEO metadata**, including automatic OpenGraph image detection
+- 🧠 Calculates `reading_time` automatically (200 WPM)
+- 🗂️ Adds `cover`, `categories`, and `title_plain` for Hugo theme compatibility
+- 🧾 Validates output and moves invalid files automatically
+- ⚙️ Supports pages and posts separately
+- 🏷️ Normalizes umlauts, removes emojis, and ensures safe slugs
+- 🪄 Optional `--default-status` to import everything as draft or published
 
 #### 🧾 About Validation and “Invalid” Files
 
@@ -46,6 +53,20 @@ pip install -r requirements.txt
 
 ---
 
+## 🧮 CLI Options
+
+| Flag | Description |
+|------|--------------|
+| `--input` | Path to Ghost JSON export |
+| `--images` | Path to Ghost images folder |
+| `--output-posts` | Output directory for posts |
+| `--output-pages` | Output directory for pages |
+| `--output-invalid` | Directory for invalid results |
+| `--site-url` | Base URL for image and link rewriting |
+| `--default-status` | Force all posts to be `"draft"` or `"published"` |
+
+---
+
 ## 🧭 Usage
 ```bash
 python3 ghost-to-hugo.py
@@ -58,16 +79,41 @@ python3 ghost-to-hugo.py
   --default-status "draft"
 ```
 
-### Example Output
-```
-➡️  About Me (page)
-✅ Exported: content/pages/about-me.md
-➡️  Outside Project – Freedom & Adventure (post)
-✅ Exported: content/posts/outside-project-freedom-adventure/index.md
+> 🧠 Tip: Use `--default-status "draft"` for reviewing converted content before publishing.
 
-🎉 Conversion finished!
-✅ Valid exports: 80
-⚠️ Invalid exports moved: 0
+### Example Output
+Each Ghost post becomes a Hugo Markdown bundle:
+
+```
+content/posts/wander-dir-den-kopf-frei/
+├── index.md
+├── dscf2292.jpg
+└── dscf1835.jpg
+```
+
+With front matter like:
+
+```yaml
+---
+title: "📸 + 🥾 | Wander dir den Kopf frei!"
+title_plain: "Wander dir den Kopf frei!"
+date: 2020-06-13T13:52:53+0000
+lastmod: 2024-11-17T15:06:44+0000
+slug: wander-dir-den-kopf-frei-wanderbericht-ausm-uedemer-hochwald
+draft: true
+type: post
+author: Daniel Bocksteger
+reading_time: 7
+description: "Ein Wochenendausflug in den Uedemer Hochwald – Ruhe, Natur und Bewegung vor der Haustür."
+tags: ["Wandern", "Natur", "Fotografie"]
+categories: ["Wandern"]
+featured_image: ./dscf2292.jpg
+cover: ./dscf2292.jpg
+seo:
+  title: "Wander dir den Kopf frei!"
+  description: "Ein Wochenendausflug in den Uedemer Hochwald – Ruhe, Natur und Bewegung vor der Haustür."
+  image: ./dscf2292.jpg
+---
 ```
 
 ---
@@ -76,6 +122,19 @@ python3 ghost-to-hugo.py
 - Python 3.8+
 - `html2text`
 - `PyYAML`
+
+---
+
+## 📦 Changelog
+
+### v1.2 – November 2025
+- 🧠 Added automatic **OpenGraph image fallback** (og_image → feature_image → first post image)
+- ✨ Added **reading_time** fallback (200 words/minute)
+- 🪶 Auto-fills empty image alt-texts with the post title
+- 🧩 Adds new front matter fields: `title_plain`, `cover`, `type`, and `categories`
+- ⚙️ Improved `description` fallback (uses first paragraph if none set)
+- 🔍 Enhanced validation & improved logging output
+- ✅ Cleaned up whitespace and ensured stable file structure
 
 ---
 
