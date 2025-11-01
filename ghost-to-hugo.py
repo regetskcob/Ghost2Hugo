@@ -46,12 +46,14 @@ def normalize_umlauts(text: str) -> str:
 
 
 def clean_slug(slug_or_title: str) -> str:
-    """Remove emojis, normalize umlauts, and create a safe slug."""
-    cleaned = "".join(
-        ch for ch in slug_or_title if not unicodedata.category(ch).startswith("So")
-    )
+    """Remove emojis and special symbols, normalize umlauts, and create a safe slug."""
+    # Remove all emojis and other non-BMP Unicode characters
+    cleaned = re.sub(r"[\U00010000-\U0010FFFF]", "", slug_or_title)
+    # Replace German umlauts and ß with ASCII equivalents
     cleaned = normalize_umlauts(cleaned)
+    # Replace all non-alphanumeric characters with hyphens
     cleaned = re.sub(r"[^a-zA-Z0-9\-]+", "-", cleaned.lower())
+    # Collapse multiple consecutive hyphens and trim edges
     cleaned = re.sub(r"-+", "-", cleaned).strip("-")
     return cleaned
 
