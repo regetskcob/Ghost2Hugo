@@ -34,11 +34,15 @@ This ensures that Hugo never breaks on bad input, and you can manually inspect o
 ---
 
 ## 📦 Installation
+You can decide between two options to get the script. 
+
+1. Clone this repo:
 ```bash
 git clone https://github.com/yourname/Ghost2Hugo.git
 cd Ghost2Hugo
 pip install -r requirements.txt
 ```
+2. download the script from the repository-releases.
 
 ---
 
@@ -79,6 +83,11 @@ python3 ghost-to-hugo.py
 **Daniel Bocksteger**  
 Software Engineer & Photographer  
 https://regetskcob.github.io
+
+---
+
+## 🫵 Contribution
+I'd be really happy in case my script serves a benefit to you. If you encounter a problem with you backup (e.g. with a newer Ghost version) or have another feature request, please consider writing an Issue or submitting a pull request.
 
 ---
 
