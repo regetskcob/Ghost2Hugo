@@ -23,13 +23,13 @@ pip install -r requirements.txt
 
 ## 🧭 Usage
 ```bash
-python3 ghost-to-hugo.py \
-  --input "./backup/data/fotografie-technologie.ghost.2025-10-11-12-12-44.json" \
-  --images "./backup/images" \
-  --output-posts "./ghost2hugo/content/posts" \
-  --output-pages "./ghost2hugo/content/pages" \
-  --output-invalid "./ghost2hugo/content/invalid" \
-  --site-url "https://regetskcob.github.io" \
+python3 ghost-to-hugo.py
+  --input "./backup/data/fotografie-technologie.ghost.2025-10-11-12-12-44.json"
+  --images "./backup/images"
+  --output-posts "./ghost2hugo/content/posts"
+  --output-pages "./ghost2hugo/content/pages"
+  --output-invalid "./ghost2hugo/content/invalid"
+  --site-url "https://regetskcob.github.io"
   --default-status "draft"
 ```
 
