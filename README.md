@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 ## 🧭 Usage
 ```bash
-python3 ghost-to-hugo.py   --input ./data/ghost-backup.json   --images ./images   --output-posts ./content/posts   --output-pages ./content/pages   --output-invalid ./content/invalid   --site-url "https://example.com"
+python3 ghost-to-hugo.py   --input ./data/ghost-backup.json   --images ./images   --output-posts ./content/posts   --output-pages ./content/pages   --output-invalid ./content/invalid   --site-url "https://example.com" --default-status "draft"
 ```
 
 ### Example Output

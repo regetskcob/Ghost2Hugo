@@ -109,7 +109,7 @@ def validate_markdown(path: str) -> bool:
 # === Core converter ===
 
 def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, converter,
-                count_valid, count_invalid):
+                count_valid, count_invalid, default_status=None):
     """Export a single post or page from Ghost to Hugo format."""
 
     title = (post.get("title") or "").strip()
@@ -136,13 +136,19 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
 
     date_fmt = datetime.fromisoformat(date.replace("Z", "+00:00")).strftime("%Y-%m-%dT%H:%M:%S%z")
     lastmod_fmt = datetime.fromisoformat(updated.replace("Z", "+00:00")).strftime("%Y-%m-%dT%H:%M:%S%z") if updated else date_fmt
+    
+    is_draft = (
+        default_status == "draft"
+        if default_status
+        else post["status"] != "published"
+    )
 
     front_matter = {
         "title": title,
         "date": date_fmt,
         "lastmod": lastmod_fmt,
         "slug": slug,
-        "draft": post["status"] != "published",
+        "draft": is_draft,
         "author": author_name,
     }
 
@@ -224,6 +230,8 @@ def main():
     parser.add_argument("--output-pages", default="content/pages", help="Output folder for pages")
     parser.add_argument("--output-invalid", default="content/invalid", help="Folder for invalid outputs")
     parser.add_argument("--site-url", default="https://example.com", help="Base URL for image and link rewriting")
+    parser.add_argument("--default-status", choices=["published", "draft"], help="Override all post statuses (e.g., import everything as 'draft').")
+
 
     args = parser.parse_args()
 
@@ -258,10 +266,10 @@ def main():
         print(f"➡️  {post['title']} ({post['type']})")
         if post["type"] == "page":
             export_post(post, authors, args.images, args.output_pages, args.output_invalid, args.site_url,
-                        converter, count_valid, count_invalid)
+                        converter, count_valid, count_invalid, args.default_status)
         elif post["type"] == "post":
             export_post(post, authors, args.images, args.output_posts, args.output_invalid, args.site_url,
-                        converter, count_valid, count_invalid)
+                        converter, count_valid, count_invalid, args.default_status)
         else:
             print(f"⚠️  Unknown post type: {post['type']}")
 
