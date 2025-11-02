@@ -1,16 +1,41 @@
 #!/usr/bin/env python3
-
 """
-Ghost2Hugo v1.2 — Convert a Ghost CMS JSON backup to Hugo Markdown posts/pages.
+Ghost2Hugo v1.3.0 — Convert a Ghost CMS JSON backup to Hugo Markdown posts/pages.
 
-Features:
+Author: Daniel Bocksteger
+Repository: https://github.com/regetskcob/Ghost2Hugo
+License: MIT
+
+✨ Features
+------------
 - Converts HTML → Markdown using html2text
 - Generates Hugo-compatible YAML front matter
-- Preserves SEO, author, and image metadata
+- Preserves SEO, author, cover, and image metadata
 - Copies referenced images into each post's folder
-- Validates output and moves invalid results to /invalid/
-- Adds sensible Hugo defaults (description, cover, type, categories, reading_time)
+- Validates and moves invalid outputs automatically
+- Adds sensible Hugo defaults (description, cover, type, reading_time)
 - Auto-selects OpenGraph image (og_image > feature_image > first content image)
+- Cleans up emojis, umlauts, and all UTF-8 hex artifacts from slugs
+
+🧠 Improvements in v1.3
+------------------------
+- Fixed f0-9f-... emoji/hex artifacts in Ghost slugs (UCS-2 + UCS-4 safe)
+- Added safe_slug_from() with intelligent fallback logic
+- New hex chain remover for Ghost’s broken UTF-8 slugs (strip_leading_hex_chains)
+- Normalized unicode dashes (– — − → -)
+- Improved console logging and validation output
+- General refactoring and cleanup
+
+Usage Example:
+--------------
+python3 ghost2hugo.py \
+  --input "./backup/data/fotografie-technologie.ghost.2025-10-11-12-12-44.json" \
+  --images "./backup/images" \
+  --output-posts "./content/posts" \
+  --output-pages "./content/pages" \
+  --output-invalid "./content/invalid" \
+  --site-url "https://regetskcob.github.io" \
+  --default-status "draft"
 """
 
 import os
@@ -18,12 +43,10 @@ import re
 import json
 import html2text
 import shutil
-import unicodedata
 import yaml
 import argparse
 from datetime import datetime
 from urllib.parse import urlparse
-
 
 # === Utility helpers ===
 
@@ -48,17 +71,80 @@ def normalize_umlauts(text: str) -> str:
 
 
 def remove_emojis(s: str) -> str:
-    """Strip all non-BMP chars (emojis etc.)."""
-    return re.sub(r"[\U00010000-\U0010FFFF]", "", s)
+    """Remove all emojis and pictographic symbols, UCS-2 and UCS-4 safe."""
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # flags
+        "\U00002700-\U000027BF"  # dingbats
+        "\U0001F900-\U0001F9FF"  # supplemental symbols and pictographs
+        "\U00002600-\U000026FF"  # miscellaneous symbols
+        "\U0001FA70-\U0001FAFF"  # extended pictographs
+        "]+",
+        flags=re.UNICODE,
+    )
+    # Also remove surrogate pairs (UCS-2 safe)
+    s = re.sub(r"[\uD800-\uDBFF][\uDC00-\uDFFF]", "", s)
+    return emoji_pattern.sub("", s)
 
 
 def clean_slug(slug_or_title: str) -> str:
-    """Remove emojis and special symbols, normalize umlauts, and create a safe slug."""
+    """Remove emojis and special symbols, normalize umlauts, and create a safe Hugo slug."""
     cleaned = remove_emojis(slug_or_title)
     cleaned = normalize_umlauts(cleaned)
     cleaned = re.sub(r"[^a-zA-Z0-9\-]+", "-", cleaned.lower())
     cleaned = re.sub(r"-+", "-", cleaned).strip("-")
     return cleaned
+
+
+def normalize_dashes(s: str) -> str:
+    """Normalize various unicode dashes to ASCII hyphen-minus."""
+    # en dash, em dash, figure dash, minus sign, etc.
+    return re.sub(r"[-–—‒−]", "-", s)
+
+
+def strip_leading_hex_chains(s: str) -> str:
+    """
+    Remove any leading chains of hex byte pairs like:
+    'f0-9f-93-9a-', 'e2-9c-8c-', repeated, any length.
+    Works regardless of the first byte (f0, e2, etc.).
+    """
+    t = s.strip().lower()
+    # Wiederholt am Anfang: >=2 Hex-Paare, optionales trailing '-'
+    while True:
+        m = re.match(r'^(?:[0-9a-f]{2}-){2,}[0-9a-f]{2}(?:-)?', t)
+        if not m:
+            break
+        t = t[m.end():]
+    return t.lstrip("-_").strip()
+
+
+def safe_slug_from(post):
+    """
+    Return a cleaned slug, prioritizing the TITLE over Ghost's slug.
+    Falls back to a sanitized Ghost slug only if the title yields nothing.
+    """
+    title = (post.get("title") or "").strip()
+    ghost_slug = (post.get("slug") or "").strip()
+
+    # 1) Primär aus dem Titel bauen (stabil gegen Emoji/Hex-Artefakte)
+    raw = normalize_dashes(title)
+    raw = remove_emojis(raw)
+    slug_from_title = clean_slug(raw)
+
+    if slug_from_title:
+        return slug_from_title
+
+    # 2) Fallback: Ghost-Slug hart bereinigen (Hex-Ketten + Emojis + Dashes)
+    ghost_raw = normalize_dashes(ghost_slug)
+    ghost_raw = strip_leading_hex_chains(ghost_raw)
+    ghost_raw = remove_emojis(ghost_raw)
+    slug = clean_slug(ghost_raw)
+
+    # 3) Finaler Fallback
+    return slug or f"untitled-{post.get('id', 'noid')}"
 
 
 def ensure_image_alts(markdown: str, default_alt: str) -> str:
@@ -94,27 +180,21 @@ def validate_markdown(path: str) -> bool:
     try:
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
-
         if not content.strip().startswith("---"):
             return False
-
         parts = content.split("---")
         if len(parts) < 3:
             return False
-
         front = yaml.safe_load(parts[1])
         if not isinstance(front, dict):
             return False
-
         required = ["title", "slug"]
         if not all(k in front and front[k] for k in required):
             return False
-
         return True
     except Exception as e:
         print(f"⚠️  Validation error in {path}: {e}")
         return False
-
 
 # === Core converter ===
 
@@ -123,8 +203,7 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
     """Export a single post or page from Ghost to Hugo format."""
 
     title = (post.get("title") or "").strip()
-    raw_slug = (post.get("slug") or title).strip()
-    slug = clean_slug(raw_slug or title)
+    slug = safe_slug_from(post)
     date = post.get("published_at") or post.get("created_at")
     updated = post.get("updated_at")
     feature_image = post.get("feature_image")
@@ -145,11 +224,9 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
     html_content = html_content.replace("__GHOST_URL__", site_url)
     markdown_content = converter.handle(html_content).strip()
 
-    # Add alt texts if missing
     title_plain = remove_emojis(title).strip()
     markdown_content = ensure_image_alts(markdown_content, title_plain or "image")
 
-    # Fallbacks: description & reading_time
     if not excerpt:
         first_para = next((p.strip() for p in markdown_content.split("\n\n") if p.strip()), "")
         excerpt = (first_para[:157] + "…") if len(first_para) > 160 else first_para
@@ -157,14 +234,11 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
         words = len(re.findall(r"\w+", markdown_content))
         reading_time = max(1, round(words / 200))
 
-    # Dates
     date_fmt = datetime.fromisoformat(date.replace("Z", "+00:00")).strftime("%Y-%m-%dT%H:%M:%S%z")
     lastmod_fmt = datetime.fromisoformat(updated.replace("Z", "+00:00")).strftime("%Y-%m-%dT%H:%M:%S%z") if updated else date_fmt
 
-    # Draft override
     is_draft = (default_status == "draft") if default_status else (post["status"] != "published")
 
-    # --- Front matter ---
     front_matter = {
         "title": title,
         "title_plain": title_plain or title,
@@ -209,7 +283,6 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
     if seo_block:
         front_matter["seo"] = seo_block
 
-    # Tags & categories
     if tags:
         tag_list = [t["name"].strip() if isinstance(t, dict) else str(t).strip() for t in tags if str(t).strip()]
         if tag_list:
@@ -251,15 +324,12 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
     else:
         count_valid[0] += 1
         imgs = "bundle" if has_images else "single"
-        print(f"✅ Exported: {markdown_path}  ({imgs}, {reading_time} min read)")
-
+        print(f"✅ [{post_type.upper()}] {slug} → {markdown_path}  ({imgs}, {reading_time} min read)")
 
 # === Main CLI ===
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Convert Ghost CMS JSON backup to Hugo Markdown files."
-    )
+    parser = argparse.ArgumentParser(description="Convert Ghost CMS JSON backup to Hugo Markdown files.")
     parser.add_argument("--input", required=True, help="Path to the Ghost JSON backup file")
     parser.add_argument("--images", required=True, help="Path to Ghost images directory")
     parser.add_argument("--output-posts", default="content/posts", help="Output folder for posts")

@@ -4,6 +4,25 @@ All notable changes to **Ghost2Hugo** are documented here.
 
 ---
 
+## [v1.3.0] – 2025-11-02
+
+### Added
+- `safe_slug_from()` with title-first fallback for robust slug generation
+- `strip_leading_hex_chains()` to remove Ghost’s broken UTF-8 byte slugs
+- Automatic unicode dash normalization for consistent filenames
+
+### Fixed
+- Hex-artifact slugs (e.g., `f0-9f-93-9a-das-geheime-leben-der-baeume`)
+- UCS-2 / UCS-4 emoji removal inconsistencies on macOS and Windows
+- Minor logging inconsistencies in export summary
+
+### Changed
+- Cleaner console output (`✅ [POST] slug → path`)
+- Updated docstrings and inline comments for clarity
+- Small code formatting cleanup (PEP 8 alignment)
+
+---
+
 ## [v1.2] – 2025-11-01
 
 ### 🚀 Added

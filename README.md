@@ -16,6 +16,8 @@ Convert your **Ghost CMS JSON backup** into a fully structured, **Hugo-compatibl
 - ⚙️ Supports pages and posts separately
 - 🏷️ Normalizes umlauts, removes emojis, and ensures safe slugs
 - 🪄 Optional `--default-status` to import everything as draft or published
+- ✏️ Cleans up emojis, umlauts, and **Ghost’s UTF-8 hex slugs** (like `f0-9f-93-9a-*`)
+
 
 #### 🧾 About Validation and “Invalid” Files
 
