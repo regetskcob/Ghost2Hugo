@@ -121,22 +121,9 @@ seo:
 ---
 
 ## 🧰 Requirements
-- Python 3.8+
+- Python 3.9+
 - `html2text`
 - `PyYAML`
-
----
-
-## 📦 Changelog
-
-### v1.2 – November 2025
-- 🧠 Added automatic **OpenGraph image fallback** (og_image → feature_image → first post image)
-- ✨ Added **reading_time** fallback (200 words/minute)
-- 🪶 Auto-fills empty image alt-texts with the post title
-- 🧩 Adds new front matter fields: `title_plain`, `cover`, `type`, and `categories`
-- ⚙️ Improved `description` fallback (uses first paragraph if none set)
-- 🔍 Enhanced validation & improved logging output
-- ✅ Cleaned up whitespace and ensured stable file structure
 
 ---
 
