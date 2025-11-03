@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ghost2Hugo v1.3.0 — Convert a Ghost CMS JSON backup to Hugo Markdown posts/pages.
+Ghost2Hugo v1.4.0 — Convert a Ghost CMS JSON backup to Hugo Markdown posts/pages.
 
 Author: Daniel Bocksteger
 Repository: https://github.com/regetskcob/Ghost2Hugo
@@ -12,30 +12,18 @@ License: MIT
 - Generates Hugo-compatible YAML front matter
 - Preserves SEO, author, cover, and image metadata
 - Copies referenced images into each post's folder
+- Rewrites all image URLs (content + front matter) to relative paths (./image.jpg)
 - Validates and moves invalid outputs automatically
 - Adds sensible Hugo defaults (description, cover, type, reading_time)
 - Auto-selects OpenGraph image (og_image > feature_image > first content image)
 - Cleans up emojis, umlauts, and all UTF-8 hex artifacts from slugs
 
-🧠 Improvements in v1.3
+🧠 Improvements in v1.4
 ------------------------
-- Fixed f0-9f-... emoji/hex artifacts in Ghost slugs (UCS-2 + UCS-4 safe)
-- Added safe_slug_from() with intelligent fallback logic
-- New hex chain remover for Ghost’s broken UTF-8 slugs (strip_leading_hex_chains)
-- Normalized unicode dashes (– — − → -)
-- Improved console logging and validation output
-- General refactoring and cleanup
-
-Usage Example:
---------------
-python3 ghost2hugo.py \
-  --input "./backup/data/fotografie-technologie.ghost.2025-10-11-12-12-44.json" \
-  --images "./backup/images" \
-  --output-posts "./content/posts" \
-  --output-pages "./content/pages" \
-  --output-invalid "./content/invalid" \
-  --site-url "https://regetskcob.github.io" \
-  --default-status "draft"
+- 🧭 All image URLs are now rewritten to local relative paths (`./image.jpg`)
+- 🔗 Front matter image fields (`featured_image`, `cover`, `seo.image`) are automatically localized
+- 🪄 Added `rewrite_image_paths()` for consistent Markdown replacements
+- 🧹 Minor console and code cleanup
 """
 
 import os
@@ -48,15 +36,8 @@ import argparse
 from datetime import datetime
 from urllib.parse import urlparse
 
+
 # === Utility helpers ===
-
-def yaml_safe(value: str) -> str:
-    """Safely serialize strings for YAML front matter."""
-    if value is None:
-        return '""'
-    dumped = yaml.safe_dump(value, allow_unicode=True)
-    return dumped.strip()
-
 
 def normalize_umlauts(text: str) -> str:
     """Replace German umlauts and ß with ASCII equivalents."""
@@ -90,6 +71,22 @@ def remove_emojis(s: str) -> str:
     return emoji_pattern.sub("", s)
 
 
+def normalize_dashes(s: str) -> str:
+    """Normalize unicode dashes to ASCII hyphen-minus."""
+    return re.sub(r"[-–—‒−]", "-", s)
+
+
+def strip_leading_hex_chains(s: str) -> str:
+    """Remove Ghost’s UTF-8 hex-byte slugs like f0-9f-93-9a-..."""
+    t = s.strip().lower()
+    while True:
+        m = re.match(r'^(?:[0-9a-f]{2}-){2,}[0-9a-f]{2}(?:-)?', t)
+        if not m:
+            break
+        t = t[m.end():]
+    return t.lstrip("-_").strip()
+
+
 def clean_slug(slug_or_title: str) -> str:
     """Remove emojis and special symbols, normalize umlauts, and create a safe Hugo slug."""
     cleaned = remove_emojis(slug_or_title)
@@ -99,56 +96,34 @@ def clean_slug(slug_or_title: str) -> str:
     return cleaned
 
 
-def normalize_dashes(s: str) -> str:
-    """Normalize various unicode dashes to ASCII hyphen-minus."""
-    # en dash, em dash, figure dash, minus sign, etc.
-    return re.sub(r"[-–—‒−]", "-", s)
-
-
-def strip_leading_hex_chains(s: str) -> str:
-    """
-    Remove any leading chains of hex byte pairs like:
-    'f0-9f-93-9a-', 'e2-9c-8c-', repeated, any length.
-    Works regardless of the first byte (f0, e2, etc.).
-    """
-    t = s.strip().lower()
-    # Wiederholt am Anfang: >=2 Hex-Paare, optionales trailing '-'
-    while True:
-        m = re.match(r'^(?:[0-9a-f]{2}-){2,}[0-9a-f]{2}(?:-)?', t)
-        if not m:
-            break
-        t = t[m.end():]
-    return t.lstrip("-_").strip()
-
-
-def safe_slug_from(post):
-    """
-    Return a cleaned slug, prioritizing the TITLE over Ghost's slug.
-    Falls back to a sanitized Ghost slug only if the title yields nothing.
-    """
+def safe_slug_from(post: dict) -> str:
+    """Return a cleaned slug, prioritizing the TITLE over Ghost’s slug."""
     title = (post.get("title") or "").strip()
     ghost_slug = (post.get("slug") or "").strip()
-
-    # 1) Primär aus dem Titel bauen (stabil gegen Emoji/Hex-Artefakte)
     raw = normalize_dashes(title)
     raw = remove_emojis(raw)
     slug_from_title = clean_slug(raw)
-
     if slug_from_title:
         return slug_from_title
-
-    # 2) Fallback: Ghost-Slug hart bereinigen (Hex-Ketten + Emojis + Dashes)
     ghost_raw = normalize_dashes(ghost_slug)
     ghost_raw = strip_leading_hex_chains(ghost_raw)
     ghost_raw = remove_emojis(ghost_raw)
     slug = clean_slug(ghost_raw)
-
-    # 3) Finaler Fallback
     return slug or f"untitled-{post.get('id', 'noid')}"
 
 
+def rewrite_image_paths(markdown: str) -> str:
+    """Rewrite all Ghost image URLs to local relative paths (./filename)."""
+    return re.sub(
+        r'!\[(.*?)\]\((?:https?:\/\/[^)\/]+)?(?:\/content\/images\/[^\)]*\/)?([^\/\)]+\.(?:jpg|jpeg|png|gif|webp|avif))\)',
+        r'![\1](./\2)',
+        markdown,
+        flags=re.IGNORECASE
+    )
+
+
 def ensure_image_alts(markdown: str, default_alt: str) -> str:
-    """Fill empty Markdown image alts: ![](path) -> ![default_alt](path)."""
+    """Fill empty Markdown image alts: ![](path) → ![default_alt](path)."""
     return re.sub(r'!\[\s*\]\(([^)]+)\)', fr'![{re.escape(default_alt)}](\1)', markdown)
 
 
@@ -161,17 +136,16 @@ def copy_images(markdown: str, images_dir: str, post_dir: str) -> (str, bool):
 
     for url in image_urls:
         parsed = urlparse(url)
-        if "__GHOST_URL__" in url or "/content/images/" in url:
-            filename = os.path.basename(parsed.path)
-            for root, _, files in os.walk(images_dir):
-                if filename in files:
-                    src = os.path.join(root, filename)
-                    dest = os.path.join(post_dir, filename)
-                    shutil.copy2(src, dest)
-                    replaced = replaced.replace(url.strip(), f"./{filename}")
-                    found_images = True
-                    print(f"   📸 Copied image: {filename}")
-                    break
+        filename = os.path.basename(parsed.path)
+        for root, _, files in os.walk(images_dir):
+            if filename in files:
+                src = os.path.join(root, filename)
+                dest = os.path.join(post_dir, filename)
+                shutil.copy2(src, dest)
+                replaced = replaced.replace(url.strip(), f"./{filename}")
+                found_images = True
+                print(f"   📸 Copied image: {filename}")
+                break
     return replaced.strip(), found_images
 
 
@@ -195,6 +169,7 @@ def validate_markdown(path: str) -> bool:
     except Exception as e:
         print(f"⚠️  Validation error in {path}: {e}")
         return False
+
 
 # === Core converter ===
 
@@ -223,9 +198,9 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
 
     html_content = html_content.replace("__GHOST_URL__", site_url)
     markdown_content = converter.handle(html_content).strip()
-
     title_plain = remove_emojis(title).strip()
     markdown_content = ensure_image_alts(markdown_content, title_plain or "image")
+    markdown_content = rewrite_image_paths(markdown_content)
 
     if not excerpt:
         first_para = next((p.strip() for p in markdown_content.split("\n\n") if p.strip()), "")
@@ -236,9 +211,9 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
 
     date_fmt = datetime.fromisoformat(date.replace("Z", "+00:00")).strftime("%Y-%m-%dT%H:%M:%S%z")
     lastmod_fmt = datetime.fromisoformat(updated.replace("Z", "+00:00")).strftime("%Y-%m-%dT%H:%M:%S%z") if updated else date_fmt
-
     is_draft = (default_status == "draft") if default_status else (post["status"] != "published")
 
+    # === Front matter ===
     front_matter = {
         "title": title,
         "title_plain": title_plain or title,
@@ -256,33 +231,33 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
         front_matter["author_bio"] = author_bio
     if author_image:
         front_matter["author_image"] = author_image.strip()
-    if feature_image:
-        feat_local = f"./{os.path.basename(feature_image.strip())}"
-        front_matter["featured_image"] = feat_local
-        front_matter["cover"] = feat_local
 
-    # --- SEO block with smart image fallback ---
+    # Localize feature image paths
+    if feature_image:
+        feat_name = os.path.basename(feature_image.strip())
+        front_matter["featured_image"] = f"./{feat_name}"
+        front_matter["cover"] = f"./{feat_name}"
+
+    # --- SEO block ---
     seo_block = {}
     if meta_title:
         seo_block["title"] = meta_title
     if meta_description:
         seo_block["description"] = meta_description
-
-    og_local = None
     if og_image:
-        og_local = f"./{os.path.basename(og_image.strip())}"
+        og_name = os.path.basename(og_image.strip())
+        seo_block["image"] = f"./{og_name}"
     elif feature_image:
-        og_local = f"./{os.path.basename(feature_image.strip())}"
+        feat_name = os.path.basename(feature_image.strip())
+        seo_block["image"] = f"./{feat_name}"
     else:
         match_first_image = re.search(r"!\[.*?\]\(([^)]+)\)", markdown_content)
         if match_first_image:
-            og_local = match_first_image.group(1).strip()
-
-    if og_local:
-        seo_block["image"] = og_local
+            seo_block["image"] = match_first_image.group(1).strip()
     if seo_block:
         front_matter["seo"] = seo_block
 
+    # Tags
     if tags:
         tag_list = [t["name"].strip() if isinstance(t, dict) else str(t).strip() for t in tags if str(t).strip()]
         if tag_list:
@@ -293,7 +268,9 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
 
     post_dir = os.path.join(out_dir, slug)
     markdown_replaced, has_images = copy_images(markdown_content, images_dir, post_dir)
+    markdown_replaced = rewrite_image_paths(markdown_replaced)
 
+    # Copy feature image to local bundle
     if feature_image:
         feature_filename = os.path.basename(feature_image.strip())
         for root, _, files in os.walk(images_dir):
@@ -325,6 +302,7 @@ def export_post(post, authors, images_dir, out_dir, invalid_dir, site_url, conve
         count_valid[0] += 1
         imgs = "bundle" if has_images else "single"
         print(f"✅ [{post_type.upper()}] {slug} → {markdown_path}  ({imgs}, {reading_time} min read)")
+
 
 # === Main CLI ===
 
@@ -368,7 +346,7 @@ def main():
     for post in posts:
         if post["status"] not in ["published", "draft"]:
             continue
-        print(f"➡️  {post['title']} ({post['type']})")
+        print(f"\n➡️  {post['title']} [{post['type']}]")
         target_dir = args.output_pages if post["type"] == "page" else args.output_posts
         export_post(post, authors, args.images, target_dir, args.output_invalid,
                     args.site_url, converter, count_valid, count_invalid, args.default_status)

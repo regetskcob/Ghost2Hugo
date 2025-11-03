@@ -8,7 +8,7 @@ Convert your **Ghost CMS JSON backup** into a fully structured, **Hugo-compatibl
 
 - 🧩 Converts Ghost **HTML → Markdown** using `html2text`
 - 🪶 Generates valid **YAML front matter** for Hugo
-- 📸 Copies referenced images into the correct post folders
+- 📸 Copies referenced images into the correct post folders and rewrites references in markdown content and front-matter params
 - 🔍 Adds **SEO metadata**, including automatic OpenGraph image detection
 - 🧠 Calculates `reading_time` automatically (200 WPM)
 - 🗂️ Adds `cover`, `categories`, and `title_plain` for Hugo theme compatibility

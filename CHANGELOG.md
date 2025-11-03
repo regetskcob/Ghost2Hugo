@@ -4,6 +4,23 @@ All notable changes to **Ghost2Hugo** are documented here.
 
 ---
 
+## [v1.4.0] – 2025-11-03
+
+### Added
+- `rewrite_image_paths()` to normalize all image references (Markdown + front matter)
+- Automatic path rewriting for `featured_image`, `cover`, and `seo.image`
+- Local image path mapping (`./image.jpg`) compatible with Hugo bundles
+
+### Fixed
+- Broken absolute Ghost image URLs left in Markdown and front matter
+- Inconsistent paths between copied files and Markdown references
+
+### Changed
+- Cleaner console output for post exports
+- Updated inline comments for better readability
+
+---
+
 ## [v1.3.0] – 2025-11-02
 
 ### Added
@@ -46,5 +63,3 @@ All notable changes to **Ghost2Hugo** are documented here.
 ## [v1.0] – 2025-10-20
 
 - Initial release of **Ghost2Hugo**
-- Converted Ghost HTML → Markdown
-- Supported image copying and basic front matter
