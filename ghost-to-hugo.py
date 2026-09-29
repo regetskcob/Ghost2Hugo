@@ -127,7 +127,7 @@ def ensure_image_alts(markdown: str, default_alt: str) -> str:
     return re.sub(r'!\[\s*\]\(([^)]+)\)', fr'![{re.escape(default_alt)}](\1)', markdown)
 
 
-def copy_images(markdown: str, images_dir: str, post_dir: str) -> (str, bool):
+def copy_images(markdown: str, images_dir: str, post_dir: str) -> tuple[str, bool]:
     """Copy referenced images into post directory; return (markdown, has_images)."""
     os.makedirs(post_dir, exist_ok=True)
     replaced = markdown
